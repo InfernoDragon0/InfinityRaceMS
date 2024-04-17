@@ -27,7 +27,7 @@ jump = 'space'
 hwnds = []
 #default size
 w = 2560
-h = 1440
+h = 820 #set to double the 2nd playerCoord value + 100
 
 # coords, there are 3 possible positions, but assuming that all lanes are equally generated, we only need 1 coord
 #potential coords for playerCoords
@@ -67,16 +67,16 @@ def press_key(key):
     if key == crouch:
         print("Crouch")
         win32api.keybd_event(key, 0, 0, 0)
-        time.sleep(0.4)
-        win32api.keybd_event(key, 0, win32con.KEYEVENTF_KEYUP, 0)
+        # time.sleep(0.4)
     elif key == jump:
         print("Jump")
+        win32api.keybd_event(crouch, 0, win32con.KEYEVENTF_KEYUP, 0)
         keyboard.press(key)
-        time.sleep(0.2)
+        #time.sleep(0.2)
         keyboard.release(key)
     else:
         print("Invalid key")
-    time.sleep(0.1)
+    time.sleep(0.05)
 
 
 def determine_action(boxes, nparray):
@@ -108,8 +108,8 @@ def determine_action(boxes, nparray):
                 if debug:
                     cv2.putText(nparray, "Jump", (playerCoords[0], playerCoords[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
                 press_key(jump)
-            if debug:
-                cv2.imshow('test2', nparray)
+            # if debug:
+            #     cv2.imshow('test2', nparray)
             break
 
 
@@ -159,7 +159,7 @@ while True:
 
     
     # give opencv image to yolov8 model
-    results = model(nparray, verbose=False)
+    results = model(nparray, verbose=False, conf=0.7)
 
     #get the result boxes
     for r in results:
