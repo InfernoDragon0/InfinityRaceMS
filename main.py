@@ -35,10 +35,11 @@ h = 1440
 #1920x1080 = (260, 270)
 #1280x720 = (175, 180)
 #1366x768 = (185, 192) (estimated)
-playerCoords = (350, 360) 
-actionRange = 80 #the range before a box is considered to be in the action range
-actionRangeSet2 = 120
-actionRangeSet3 = 160 
+playerCoords = (245, 360) 
+actionRange = 185 #the range before a box is considered to be in the action range
+actionRangeIndex = 0
+actionRanges = [80, 120, 160] #the range before a box is considered to be in the action range
+
 
 #####################
 # OTHER SETTINGS
@@ -49,12 +50,13 @@ debug = True
 
 # yolov8 model initialization
 model = YOLO('infinityrace.pt')
-
+keyIsPressed = False
 #test screen capture position
 # mon = {'top': 300, 'left': 500, 'width': 1280, 'height': 720}
 # sct = mss()
 
 #####################
+
 
 #window finder
 def winEnumHandler( hwnd, ctx ):
@@ -64,24 +66,48 @@ def winEnumHandler( hwnd, ctx ):
             hwnds.append(hwnd)
 
 def press_key(key):
+    global keyIsPressed
+    if keyIsPressed:
+        return
+    
     if key == crouch:
         print("Crouch")
         win32api.keybd_event(key, 0, 0, 0)
-        time.sleep(0.4)
-        win32api.keybd_event(key, 0, win32con.KEYEVENTF_KEYUP, 0)
+        keyIsPressed = True
+        # time.sleep(0.4)
+        # win32api.keybd_event(key, 0, win32con.KEYEVENTF_KEYUP, 0)
     elif key == jump:
         print("Jump")
         keyboard.press(key)
-        time.sleep(0.2)
-        keyboard.release(key)
+        keyIsPressed = True
+        # time.sleep(0.2)
+        # keyboard.release(key)
     else:
         print("Invalid key")
-    time.sleep(0.1)
+    # time.sleep(0.1)
 
+def release_keys():
+    global keyIsPressed
+    if keyIsPressed:
+        time.sleep(0.1)
+        win32api.keybd_event(crouch, 0, win32con.KEYEVENTF_KEYUP, 0)
+        keyboard.release(jump)
+        print("Release")
+
+
+    keyIsPressed = False
 
 def determine_action(boxes, nparray):
     #in each box, there is xyxy
+    #if no box, release keys
+    if len(boxes) == 0:
+        release_keys()
+        return
+    
     for box in boxes:
+        if box.xyxy[0][0] < playerCoords[0]:
+            continue
+
         b = box.xyxy[0]  # get box coordinates in (left, top, right, bottom) format
         # the playercoords provided will be the bottom of the player
         # the player stays in the same x position
@@ -108,9 +134,13 @@ def determine_action(boxes, nparray):
                 if debug:
                     cv2.putText(nparray, "Jump", (playerCoords[0], playerCoords[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
                 press_key(jump)
-            if debug:
-                cv2.imshow('test2', nparray)
-            break
+            # if debug:
+            #     cv2.imshow('test2', nparray)
+            return
+    
+    #if no box is within the range, release keys, if the return statement is not called above, then safe to release keys
+    release_keys()
+
 
 
 ####################
@@ -159,7 +189,7 @@ while True:
 
     
     # give opencv image to yolov8 model
-    results = model(nparray, verbose=False)
+    results = model(nparray, verbose=False, conf=0.75)
 
     #get the result boxes
     for r in results:
@@ -173,6 +203,10 @@ while True:
 
         #this is for debugging
         for box in boxes:
+            #if box is behind player, ignore it and remove from boxes
+            if box.xyxy[0][0] < playerCoords[0]:
+                continue
+
             b = box.xyxy[0]  # get box coordinates in (left, top, right, bottom) format
             c = box.cls
             annotator.box_label(b, model.names[int(c)])
