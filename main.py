@@ -4,6 +4,11 @@ from ultralytics.utils.plotting import Annotator
 import time
 import cv2
 import numpy as np
+import win32gui
+import win32ui
+import win32con
+import win32api
+import keyboard
 from mss import mss
 
 ## uncomment the bottom two to check if yolov8 is running on cpu or gpu
@@ -13,41 +18,65 @@ from mss import mss
 #####################
 # SETTINGS for button to be pressed
 #####################
-crouch = 0
-jump = 1
+crouch = 0x28 # 'down arrow
+jump = 'space'
 
 #####################
 # SETTINGS for game
 #####################
+hwnds = []
+#default size
+w = 2560
+h = 1440
 
 # coords, there are 3 possible positions, but assuming that all lanes are equally generated, we only need 1 coord
-playerCoords = (250, 330)
-actionRange = 100 #the range before a box is considered to be in the action range
-
+#potential coords for playerCoords
+#2560x1440 = (350, 360) (base size)
+#1920x1080 = (260, 270)
+#1280x720 = (175, 180)
+#1366x768 = (185, 192) (estimated)
+playerCoords = (350, 360) 
+actionRange = 80 #the range before a box is considered to be in the action range
+actionRangeSet2 = 120
+actionRangeSet3 = 160 
 
 #####################
 # OTHER SETTINGS
 #####################
 
 # debug display
-debug = False
+debug = True
 
 # yolov8 model initialization
 model = YOLO('infinityrace.pt')
 
 #test screen capture position
-mon = {'top': 300, 'left': 500, 'width': 1280, 'height': 720}
-sct = mss()
+# mon = {'top': 300, 'left': 500, 'width': 1280, 'height': 720}
+# sct = mss()
 
 #####################
+
+#window finder
+def winEnumHandler( hwnd, ctx ):
+    if win32gui.IsWindowVisible( hwnd ):
+        if (win32gui.GetWindowText(hwnd) == "MapleStory"):
+            print ( hex( hwnd ), win32gui.GetWindowText( hwnd ) )
+            hwnds.append(hwnd)
 
 def press_key(key):
     if key == crouch:
         print("Crouch")
+        win32api.keybd_event(key, 0, 0, 0)
+        time.sleep(0.4)
+        win32api.keybd_event(key, 0, win32con.KEYEVENTF_KEYUP, 0)
     elif key == jump:
         print("Jump")
+        keyboard.press(key)
+        time.sleep(0.2)
+        keyboard.release(key)
     else:
         print("Invalid key")
+    time.sleep(0.1)
 
 
 def determine_action(boxes, nparray):
@@ -87,15 +116,46 @@ def determine_action(boxes, nparray):
 ####################
 # PREDICTION LOOP
 ####################
+win32gui.EnumWindows( winEnumHandler, None )
+hwnd = hwnds[0]
+if (len(hwnds) > 1): #player has chat external
+    hwnd = hwnds[1]
+
+#get the correct size
+# rect = win32gui.GetWindowRect(hwnd)
+# x = rect[0]
+# y = rect[1]
+# w = rect[2] - x
+# h = rect[3] - y
+
+wDC = win32gui.GetWindowDC(hwnd)
+dcObj=win32ui.CreateDCFromHandle(wDC)
+cDC=dcObj.CreateCompatibleDC()
+dataBitMap = win32ui.CreateBitmap()
+dataBitMap.CreateCompatibleBitmap(dcObj, w, h)
+cDC.SelectObject(dataBitMap)
+
+print(w,h)
 
 # opencv initialization
 while True:
     #start time
     start = time.time()
-    img = sct.grab(mon)
-    nparray = np.array(img)
+    # img = sct.grab(mon)
+    # nparray = np.array(img)
+    # Cap Screen
+    cDC.BitBlt((0,0),(w, h) , dcObj, (0,0), win32con.SRCCOPY)
+    signedIntsArray = dataBitMap.GetBitmapBits(True)
+
     # #4 channel to 3 channel
-    nparray = cv2.cvtColor(nparray, cv2.COLOR_BGRA2BGR)
+    img = np.fromstring(signedIntsArray, dtype='uint8')
+    img.shape = (h,w,4)
+    nparray = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+
+    #resize
+    nparray = cv2.resize(nparray, (0,0), fx=0.5, fy=0.5) 
+
+    # nparray = cv2.cvtColor(nparray, cv2.COLOR_BGRA2BGR)
 
     
     # give opencv image to yolov8 model
@@ -127,6 +187,10 @@ while True:
         cv2.imshow('test', nparray)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         cv2.destroyAllWindows()
+        dcObj.DeleteDC()
+        cDC.DeleteDC()
+        win32gui.ReleaseDC(hwnd, wDC)
+        win32gui.DeleteObject(dataBitMap.GetHandle())
         break
 
     #end time
